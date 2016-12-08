@@ -67,11 +67,13 @@ EclairJSSwift.prototype.init = function(sparkContext) {
   var swift = this;
   return new Promise(function (resolve, reject) {
     swift.eclairjs.addJar(swift.jar).then(function() {
-      setHadoopConfig(
-        sparkContext, 
-        swift.service, 
-        swift.credentials
-      ).then(resolve).catch(reject);
+      sparkContext.addJar(swift.jar).then(function() {
+        setHadoopConfig(
+          sparkContext, 
+          swift.service, 
+          swift.credentials
+        ).then(resolve).catch(reject);
+      }).catch(reject);
     }).catch(reject);
   });
 }
