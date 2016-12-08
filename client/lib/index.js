@@ -24,10 +24,10 @@ function EclairJSSwift(obj) {
 
   this.eclairjs = obj.eclairjs;
   this.service = obj.service;
-
+  this.isBluemixSpark = false;
   this.jar = obj.jar
     ? obj.jar
-    : ""
+    : "http://repo2.maven.org/maven2/org/eclairjs/eclairjs-swift/0.10/eclairjs-swift-0.10-jar-with-dependencies.jar"
 
   this.credentials = {};
   if(obj.credentials) {
@@ -37,29 +37,41 @@ function EclairJSSwift(obj) {
     if(vcap['Object-Storage']) {
       this.credentials = vcap['Object-Storage'][0]['credentials'];
     }
+    if(vcap['spark']) {
+      this.isBluemixSpark = true;
+    }
   }
-
-  console.log("jar = " + this.jar);
 }
 
+function setHadoopConfig(sc, service, credentials) {
+  var prefix = "fs.swift2d.service."+service+".";
+  return Promise.all([
+    sc.setHadoopConfiguration("fs.swift2d.impl", "com.ibm.stocator.fs.ObjectStoreFileSystem"), 
+    sc.setHadoopConfiguration(prefix+"auth.url", credentials.auth_url + "/v3/auth/tokens"),
+    sc.setHadoopConfiguration(prefix+"tenant", credentials.projectId),
+    sc.setHadoopConfiguration(prefix+"public", "true"),
+    sc.setHadoopConfiguration(prefix+"username", credentials.userId),
+    sc.setHadoopConfiguration(prefix+"password", credentials.password),
+    sc.setHadoopConfiguration(prefix+"region", credentials.region),
+    sc.setHadoopConfiguration(prefix+"auth.method", "keystoneV3"),
+  ]);
+};
+
 EclairJSSwift.prototype.init = function(sparkContext) {
-  console.log('in init');
+
+  //Stocator jar is already loaded in spark as a service.
+  if(this.isBluemixSpark) {
+    return setHadoopConfig(sparkContext, this.service, this.credentials);
+  }
+
   var swift = this;
   return new Promise(function (resolve, reject) {
     swift.eclairjs.addJar(swift.jar).then(function() {
-      console.log('1');
-      var prefix = "fs.swift2d.service."+swift.service+".";
-      var sc = sparkContext;
-      var p = Promise.all([
-        sc.setHadoopConfiguration("fs.swift2d.impl", "com.ibm.stocator.fs.ObjectStoreFileSystem"), 
-        sc.setHadoopConfiguration(prefix+"auth.url", swift.credentials.auth_url + "/v3/auth/tokens"),
-        sc.setHadoopConfiguration(prefix+"tenant", swift.credentials.projectId),
-        sc.setHadoopConfiguration(prefix+"public", "true"),
-        sc.setHadoopConfiguration(prefix+"username", swift.credentials.userId),
-        sc.setHadoopConfiguration(prefix+"password", swift.credentials.password),
-        sc.setHadoopConfiguration(prefix+"region", swift.credentials.region),
-        sc.setHadoopConfiguration(prefix+"auth.method", "keystoneV3"),
-      ]).then(resolve).catch(reject);
+      setHadoopConfig(
+        sparkContext, 
+        swift.service, 
+        swift.credentials
+      ).then(resolve).catch(reject);
     }).catch(reject);
   });
 }
